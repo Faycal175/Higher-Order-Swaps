@@ -52,10 +52,10 @@ class StrategyBacktester:
         df_positions["dS"] = df_positions.groupby(["option_id"])["spot"].diff().fillna(0)
         df_positions["dt"] = 1
         logging.info("Append previous period greeks for P&L calculations.")
-        df_positions["prev_theta"] = df_positions.groupby("option_id")["theta"].shift(1).fillna(method="bfill")
-        df_positions["prev_gamma"] = df_positions.groupby("option_id")["gamma"].shift(1).fillna(method="bfill")
-        df_positions["prev_delta"] = df_positions.groupby("option_id")["delta"].shift(1).fillna(method="bfill")
-        df_positions["prev_vega"] = df_positions.groupby("option_id")["vega"].shift(1).fillna(method="bfill")
+        df_positions["prev_theta"] = df_positions.groupby("option_id")["theta"].shift(1).bfill()
+        df_positions["prev_gamma"] = df_positions.groupby("option_id")["gamma"].shift(1).bfill()
+        df_positions["prev_delta"] = df_positions.groupby("option_id")["delta"].shift(1).bfill()
+        df_positions["prev_vega"] = df_positions.groupby("option_id")["vega"].shift(1).bfill()
         df_positions["obs_date"] = df_positions["entry_date"].apply(lambda x: x - pd.Timedelta(days=1))
         df_pnl = pd.DataFrame(
             [[0, 0, 0, 0, 0, 0, 0, 0]],
@@ -84,7 +84,7 @@ class StrategyBacktester:
             df_day["vega_pnl"] = df_day["scaled_weight"] * df_day["dsigma"] * df_day["prev_vega"]
             df_day["residual_pnl"] = df_day["pnl"] - df_day["delta_pnl"] - df_day["gamma_pnl"] - df_day["theta_pnl"] - df_day["vega_pnl"]
             df_day["leverage"] = df_day["scaled_weight"] * df_day["spot"]
-            df_day["cashflow"] = 0
+            df_day["cashflow"] = 0.0
             df_day.loc[df_day["entry_date"] == df_day["date"], "cashflow"] = -df_day["scaled_weight"] * df_day["mid"]
             df_day.loc[df_day["expiration"] == df_day["date"], "cashflow"] = df_day["scaled_weight"] * df_day["mid"]
 
@@ -216,6 +216,47 @@ class BacktesterBidAskFromData(StrategyBacktester):
         df_positions_cp["mid"] = np.where(
             trade_out_filter & long_position_filter,
             df_positions_cp["bid"],
+            df_positions_cp["mid"],
+        )
+        return df_positions_cp
+
+
+class BacktesterFixedRelativeBidAsk(StrategyBacktester):
+    def __init__(self, df_positions: pd.DataFrame) -> None:
+        super().__init__(df_positions)
+
+    @classmethod
+    def apply_tcost(cls, df_positions: pd.DataFrame, relative_half_spread: float = 0.03, **kwargs) -> pd.DataFrame:
+        logging.info(f"Applying fixed relative half-spread of {relative_half_spread:.1%} on transaction dates.")
+        df_positions_cp = df_positions.copy()
+
+        # Only apply to option legs — exclude delta-hedge spot rows (option_id == ticker)
+        option_filter = df_positions_cp["option_id"] != df_positions_cp["ticker"]
+        trade_in_filter = option_filter & (df_positions_cp["entry_date"] == df_positions_cp["date"])
+        trade_out_filter = option_filter & (df_positions_cp["expiration"] == df_positions_cp["date"])
+        short_position_filter = df_positions_cp["weight"] < 0
+        long_position_filter = ~short_position_filter
+
+        # Short: sell at bid (mid * (1 - half_spread)), buy back at ask (mid * (1 + half_spread))
+        df_positions_cp["mid"] = np.where(
+            trade_in_filter & short_position_filter,
+            df_positions_cp["mid"] * (1 - relative_half_spread),
+            df_positions_cp["mid"],
+        )
+        df_positions_cp["mid"] = np.where(
+            trade_out_filter & short_position_filter,
+            df_positions_cp["mid"] * (1 + relative_half_spread),
+            df_positions_cp["mid"],
+        )
+        # Long: buy at ask (mid * (1 + half_spread)), sell at bid (mid * (1 - half_spread))
+        df_positions_cp["mid"] = np.where(
+            trade_in_filter & long_position_filter,
+            df_positions_cp["mid"] * (1 + relative_half_spread),
+            df_positions_cp["mid"],
+        )
+        df_positions_cp["mid"] = np.where(
+            trade_out_filter & long_position_filter,
+            df_positions_cp["mid"] * (1 - relative_half_spread),
             df_positions_cp["mid"],
         )
         return df_positions_cp

@@ -266,6 +266,60 @@ class DeltaGammaHedgedOptionTrade(DeltaHedgedOptionTrade):
 
 
 class VarianceSwap(OptionTrade):
+    @staticmethod
+    def _compute_strike_widths(strikes: np.ndarray) -> np.ndarray:
+        strikes = np.asarray(strikes, dtype=float)
+        if len(strikes) == 0:
+            return np.array([], dtype=float)
+        if len(strikes) == 1:
+            return np.array([0.0], dtype=float)
+
+        widths = np.empty(len(strikes), dtype=float)
+        widths[0] = strikes[1] - strikes[0]
+        widths[-1] = strikes[-1] - strikes[-2]
+        if len(strikes) > 2:
+            widths[1:-1] = 0.5 * (strikes[2:] - strikes[:-2])
+        return widths
+
+    @classmethod
+    def _thin_strikes(cls, df_group: pd.DataFrame, strike_spacing: float | int) -> pd.DataFrame:
+        if pd.isna(strike_spacing) or strike_spacing <= 0:
+            return df_group.sort_values("strike").copy()
+
+        df = df_group.copy()
+        df["strike_bucket"] = (df["strike"] / strike_spacing).round() * strike_spacing
+        df["bucket_dist"] = (df["strike"] - df["strike_bucket"]).abs()
+        df = (
+            df.sort_values(["bucket_dist", "strike"])
+            .drop_duplicates(subset=["call_put", "strike_bucket"], keep="first")
+            .drop(columns=["strike_bucket", "bucket_dist"])
+            .sort_values("strike")
+        )
+        return df
+
+    @classmethod
+    def _compute_variance_weights_for_group(
+        cls,
+        df_group: pd.DataFrame,
+        strike_spacing: float | int,
+    ) -> pd.DataFrame:
+        df_group = cls._thin_strikes(df_group, strike_spacing=strike_spacing)
+        weighted_groups = []
+        for call_put in ("P", "C"):
+            side_df = df_group[df_group["call_put"] == call_put].copy().sort_values("strike")
+            if side_df.empty:
+                continue
+            widths = cls._compute_strike_widths(side_df["strike"].to_numpy(dtype=float))
+            side_df["weight"] = widths / side_df["strike"].to_numpy(dtype=float) ** 2
+            weighted_groups.append(side_df)
+
+        if not weighted_groups:
+            df_group = df_group.copy()
+            df_group["weight"] = 0.0
+            return df_group
+
+        return pd.concat(weighted_groups, ignore_index=True)
+
     @classmethod
     def _select_options(cls, df_options: pd.DataFrame, legs: list[VarianceSwapLegSpec], **kwargs) -> pd.DataFrame:
         df_list = []
@@ -286,29 +340,20 @@ class VarianceSwap(OptionTrade):
                 | ((selected_option_df["call_put"] == "C") & (selected_option_df["moneyness"] >= 1.0))
             ]
             selected_option_df["leg_name"] = leg_name
-
-            selected_option_df_pvt = (
-                selected_option_df.pivot_table(index=["date", "expiration", "strike", "option_id"], columns="call_put", values="mid")
-                .reset_index()
-                .sort_values("strike")
-            )
-
-            selected_option_df_pvt["dK"] = selected_option_df_pvt["strike"].diff()
-            selected_option_df_pvt["weight_C"] = ((selected_option_df_pvt["dK"] / 2) * selected_option_df_pvt["C"]) / selected_option_df_pvt[
-                "strike"
-            ] ** 2
-            selected_option_df_pvt["weight_P"] = ((selected_option_df_pvt["dK"] / 2) * selected_option_df_pvt["P"]) / selected_option_df_pvt[
-                "strike"
-            ] ** 2
-            selected_option_df_pvt["weight"] = selected_option_df_pvt["weight_P"].fillna(selected_option_df_pvt["weight_C"])
-            selected_option_df_pvt = selected_option_df_pvt[["date", "option_id", "weight"]]
-            selected_option_df = selected_option_df.merge(selected_option_df_pvt, on=["date", "option_id"])
             selected_option_df = selected_option_df.loc[selected_option_df["date"].dt.day_of_week.isin(rebal_week_day)]
-            print(selected_option_df)
-            selected_option_df_norm = (
-                selected_option_df.groupby("date")
-                .apply(lambda df_group: cls._normalize_strike_weights(df_group, target_weight=weight))
-                .reset_index(drop=True)
+            selected_option_df_weighted = pd.concat(
+                [
+                    cls._compute_variance_weights_for_group(df_group.copy(), strike_spacing=strike_spacing)
+                    for _, df_group in selected_option_df.groupby(["date", "expiration"], sort=False)
+                ],
+                ignore_index=True,
+            )
+            selected_option_df_norm = pd.concat(
+                [
+                    cls._normalize_strike_weights(df_group.copy(), target_weight=weight)
+                    for _, df_group in selected_option_df_weighted.groupby("date", sort=False)
+                ],
+                ignore_index=True,
             )
             df_list.append(selected_option_df_norm.rename(columns={"date": "entry_date"}))
 
@@ -325,6 +370,6 @@ class VarianceSwap(OptionTrade):
             normalization_factor = target_size / strike_weight_sum
             df_group["weight"] = df_group["weight"] * normalization_factor
         else:
-            df_group["weight"] = 0
+            df_group["weight"] = 0.0
 
         return df_group

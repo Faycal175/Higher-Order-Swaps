@@ -57,7 +57,7 @@ opentelemetry-api
 opentelemetry-sdk
 opentelemetry-semantic-conventions
 packaging
-pandas
+pandas==2.3.3
 parso
 partd
 pathspec

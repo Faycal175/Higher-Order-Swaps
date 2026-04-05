@@ -63,6 +63,12 @@ class SPYOptionLoader(OptionLoader):
     def _get_valid_date_range(cls) -> tuple[datetime, datetime]:
         return (datetime(2020, 1, 2), datetime(2022, 12, 30))
 
+    @classmethod
+    def _process_loaded_data(cls, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        # spy_2020_2022.parquet ne contient pas de colonne ticker (SPY only)
+        df["volume"] = df["volume"].fillna(0)
+        return cls._compute_final_payoff(df)
+
 
 class AAPLOptionLoader(OptionLoader):
     @classmethod
