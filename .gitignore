@@ -1,0 +1,27 @@
+# Virtual environments
+venv/
+.venv/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Local environment / tooling
+.idx/
+
+# Python cache / build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+build/
+dist/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
