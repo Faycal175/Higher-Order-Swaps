@@ -4,7 +4,8 @@ import pandas as pd
 
 from investment_lab.data.data_loader import DataLoader
 
-ROOT_PATH = r"../"
+ROOT_PATH = "."
+
 
 
 class USRatesLoader(DataLoader):
