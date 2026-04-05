@@ -1,5 +1,5 @@
 # Higher Order Swap Replication
-**Équipe : Faycal El Bouzidi, Victor d'Anglejean, Owen Manach**
+**Équipe : Faycal El Bouzidi, Victor d'Anglejan, Owen Manach**
 ## Volatility Trading Project — Master 272 (Université Paris Dauphine)
 
 Ce projet a été réalisé dans le cadre du cours de **Stratégies de Volatilité** du **Master 272 - Université Paris Dauphine**.
