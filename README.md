@@ -52,7 +52,7 @@ pip install -e .
 
 Le notebook principal du projet est :
 
-`notebooks/Moment_Swaps_Portfolio2.ipynb`
+`notebooks/Moment_Swaps_Portfolio.ipynb`
 
 Il contient notamment :
 
@@ -97,14 +97,6 @@ Les modules ci-dessous dans `investment_lab/` proviennent de cette base, ou en s
 - `investment_lab/rates.py`
 - `investment_lab/util.py`
 
-
-## Avertissement
-
-Ce contenu est fourni uniquement à des fins pédagogiques et académiques.
-
-- Il ne constitue pas un conseil en investissement.
-- Les résultats de backtest dépendent des hypothèses retenues : données, conventions, coûts, fréquence de rebalancement, etc.
-- Les performances passées ne préjugent pas des performances futures.
 
 ## Références académiques
 
